@@ -1,0 +1,287 @@
+#### fixing page via third stack
+from inspect import stack
+import sys
+from PyQt5.QtCore import Qt
+from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5.QtGui import QPixmap, QColor, QPainter
+from PyQt5.QtWidgets import QLabel, QApplication
+###############
+class Node:
+    def __init__(self, x0, y0, x1, y1, color):
+        self.x0 = x0
+        self.x1 = x1
+        self.y0 = y0
+        self.y1 = y1
+        self.color=color
+        self.next = None
+  
+  
+class stackXY:
+  
+    # Initializing a stack.
+    # Use a dummy node, which is
+    # easier for handling edge cases.
+    def __init__(self):
+        self.head = Node("head","head","head","head",None)
+        self.size = 0
+  
+    # String representation of the stack
+    def __str__(self):
+        cur = self.head.next
+        out = ""
+        while cur:
+            out += str(cur.x0) + "->"
+            cur = cur.next
+        return out[:-3]
+  
+    # Get the current size of the stack
+    def getSize(self):
+        return self.size
+  
+    # Check if the stack is empty
+    def isEmpty(self):
+        return self.size == 0
+  
+    # Get the top item of the stack
+    def peek(self):
+  
+        # Sanitary check to see if we
+        # are peeking an empty stack.
+        if self.isEmpty():
+            #raise Exception("Peeking from an empty stack")
+            return None
+        return self.head.next #Address of pointer 
+  
+    # Push a value into the stack.
+    def push(self, x0, y0, x1, y1,color):
+        node = Node(x0, y0, x1, y1,color)
+        node.next = self.head.next
+        self.head.next = node
+        self.size += 1
+  
+    # Remove a value from the stack and return.
+    def pop(self):
+        if self.isEmpty():
+            #raise Exception("Popping from an empty stack")
+            return None
+        remove = self.head.next
+        self.head.next = self.head.next.next
+        self.size -= 1
+        return remove #Address of Pointer
+
+
+###############
+
+class Canvas(QLabel):
+    def __init__(self,height, width, background_color=QColor('#FFFFFF')):
+        super().__init__()
+        self.UndoStack=stackXY()
+        self.RedoStack=stackXY()
+        self.FixStack=stackXY()
+        qpixmap = QPixmap(int(height), int(width))
+        qpixmap.fill(background_color)
+        self.setPixmap(qpixmap)
+        self.pen_color = QColor('#000000')
+
+    def set_pen_color(self, color):
+        self.pen_color = QtGui.QColor(color)
+
+    def draw_point(self, x, y):
+        self.RedoDelete()
+        painter = QPainter(self.pixmap())
+        p = painter.pen()
+        p.setWidth(4)
+        p.setColor(self.pen_color)
+        painter.setPen(p)
+        painter.drawPoint(x, y)
+        self.UndoStack.push(x, y, x, y,self.pen_color)
+        painter.end()
+        self.update()
+
+    ##########Here
+    def draw_line(self, x0, y0, x1, y1):
+        painter = QPainter(self.pixmap())
+        p = painter.pen()
+        p.setWidth(4)
+        p.setColor(self.pen_color)
+        painter.setPen(p)
+        painter.drawLine(x0, y0, x1, y1)
+        self.UndoStack.push(x0, y0, x1, y1,self.pen_color) ######
+        painter.end()
+        self.update()
+
+
+    def mousePressEvent(self, e: QtGui.QMouseEvent):
+        self.draw_point(e.x(), e.y())
+        self.prev_point = (e.x(), e.y())
+
+    def mouseMoveEvent(self, e):
+        self.draw_line(self.prev_point[0], self.prev_point[1], e.x(), e.y())
+        self.prev_point = (e.x(), e.y())
+
+    def mouseReleaseEvent(self, e):
+        self.prev_point = tuple()
+
+    def Undo(self):
+        a=self.UndoStack.pop()
+        if a==None:
+            return
+        b=self.UndoStack.peek()
+        x0=a.x0
+        y0=a.y0
+        x1=a.x1
+        y1=a.y1
+        painter = QPainter(self.pixmap())
+        p = painter.pen()
+        p.setWidth(4)
+        p.setColor(QColor('#FFFFFF'))
+        painter.setPen(p)
+        painter.drawLine(x0, y0, x1, y1)
+        self.RedoStack.push(x0, y0, x1, y1,a.color)
+        painter.end()
+        self.update()
+        if b==None:
+            return
+        if a.x0==b.x1 and a.y0==b.y1 :
+            self.Undo()
+        else:
+            return
+        
+    def Redo(self):
+        a=self.RedoStack.pop()
+        if a==None:
+            return
+        b=self.RedoStack.peek()
+        x0=a.x0
+        y0=a.y0
+        x1=a.x1
+        y1=a.y1
+        painter = QPainter(self.pixmap())
+        p = painter.pen()
+        p.setWidth(4)
+        p.setColor(a.color)
+        painter.setPen(p)
+        painter.drawLine(x0, y0, x1, y1)
+        self.UndoStack.push(x0, y0, x1, y1,a.color)
+        painter.end()
+        self.update()
+        if b==None:
+            return
+        if a.x1==b.x0 and a.y1==b.y0 :
+            self.Redo()
+    
+    def RedoDelete(self):
+        self.RedoStack.head.next=None
+        self.RedoStack.size=0
+        return
+
+    def FixPage(self):
+        while True:
+            a=self.UndoStack.pop()
+            if a==None :
+                return
+            self.FixStack.push(a.x0, a.y0, a.x1, a.y1,a.color)
+        
+
+    def PrintPage(self):
+        while True:
+            a=self.FixStack.pop()
+            if a==None:
+                return
+            x0=a.x0
+            y0=a.y0
+            x1=a.x1
+            y1=a.y1
+            painter = QPainter(self.pixmap())
+            p = painter.pen()
+            p.setWidth(4)
+            p.setColor(a.color)
+            painter.setPen(p)
+            painter.drawLine(x0, y0, x1, y1)
+            self.UndoStack.push(x0, y0, x1, y1,a.color)
+            painter.end()
+            self.update()
+          
+            
+
+
+class PaletteButton(QtWidgets.QPushButton):
+
+    def __init__(self, color):
+        super().__init__()
+        self.setFixedSize(QtCore.QSize(32, 32))
+        self.color = color
+        self.setStyleSheet("background-color: %s;" % color + "border-radius : 10; ") #border-radius : 15 -> circle
+
+
+class MainWindow(QtWidgets.QMainWindow):
+    #QtWidgets.QMainWindow
+
+    def __init__(self):
+        super().__init__()
+        self.colors = [
+            '#000002', '#868687', '#900124', '#ed2832', '#2db153', '#13a5e7', '#4951cf',
+            '#fdb0ce', '#fdca0f', '#eee3ab', '#9fdde8', '#7a96c2', '#cbc2ec', '#a42f3b',
+            '#f45b7a', '#c24998', '#81588d', '#bcb0c2', '#dbcfc2',
+        ]
+        app = QApplication.instance()
+        screen = app.primaryScreen()
+        geometry = screen.availableGeometry()
+        self.canvas = Canvas(geometry.width()*0.60, geometry.height()*0.7)
+        w = QtWidgets.QWidget()
+        w.setStyleSheet("background-color: #313234")
+        l = QtWidgets.QVBoxLayout()  # vertical layout
+        w.setLayout(l)
+        l.addWidget(self.canvas)
+
+        palette = QtWidgets.QHBoxLayout()  # horizontal layout
+        self.add_palette_button(palette)
+        l.addLayout(palette)
+
+        self.setCentralWidget(w)
+
+
+    def add_palette_button(self, palette):
+        for c in self.colors:
+            item = PaletteButton(c)
+            item.pressed.connect(self.set_canvas_color)
+            palette.addWidget(item)
+
+    def set_canvas_color(self):
+        sender = self.sender()
+        self.canvas.set_pen_color(sender.color)
+    def undo(self):
+        self.canvas.Undo()
+    
+    # def keyPressEvent(self, e):
+    #     if e.key() == Qt.Key.Key_Y:
+    #         print("Y pressed")
+    def keyPressEvent(self, event):
+        if event.modifiers() & Qt.ControlModifier:
+            if event.key() == Qt.Key.Key_Z:
+                #print("Ctrl + Z")
+                self.canvas.Undo()
+                self.canvas.FixPage()
+                self.canvas.PrintPage()
+            elif event.key() == Qt.Key.Key_Y:
+                #print("Ctrl + Y")
+                self.canvas.Redo()
+    
+   
+           
+
+    
+    
+    
+
+
+app = QtWidgets.QApplication(sys.argv)
+window = MainWindow()
+window.setWindowFlags(QtCore.Qt.WindowCloseButtonHint | QtCore.Qt.WindowMinimizeButtonHint)
+window.show()
+x= input()
+window.undo()
+window.show()
+app.exec_()
+
+# Window dimensions
